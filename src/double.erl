@@ -14,13 +14,16 @@
 
 
 start() ->
-  spawn(fun doubler/0).
+  Pid = spawn(fun doubler/0),
+  register(double, Pid).
+
+
 
 doubler() ->
   receive
-    {Number, Pid} ->
-      Pid ! Number * 2,
-    doubler()
+    {Pid, Ref, N} ->
+      Pid ! {Ref, N * 2},
+      doubler()
 
   end.
 
