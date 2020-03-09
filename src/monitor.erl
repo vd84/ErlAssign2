@@ -11,7 +11,6 @@
 
 %% API
 -export([start/0]).
--import(double, [doubler/0]).
 
 
 start() ->
@@ -26,12 +25,14 @@ on_error(Pid, On_error) ->
       {'DOWN', Reference, process, Pid, Why} ->
         demonitor(Reference),
         On_error(Pid, Why),
-        unregister(double),
         io:format("I (parent) My worker ~p died (~p)~n", [Pid, Why]),
         start()
 
     end
         end).
+
+
+
 
 
 

@@ -10,20 +10,33 @@
 -author("doha6991").
 
 %% API
--export([start/0]).
+-export([start/0, double/1]).
 
 
 start() ->
-  Pid = spawn(fun doubler/0),
-  register(double, Pid).
+  Pid = spawn(fun double/0),
+  register(double, Pid),
+
+  Pid.
 
 
 
-doubler() ->
+double() ->
   receive
     {Pid, Ref, N} ->
       Pid ! {Ref, N * 2},
-      doubler()
+      double()
 
   end.
+
+double(T) ->
+  Ref = make_ref(),
+  double ! {self(), Ref, T},
+  receive
+    {Ref, Number} ->
+      Number
+
+
+  end.
+
 
