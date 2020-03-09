@@ -16,7 +16,6 @@
 start() ->
   Pid = spawn(fun double/0),
   register(double, Pid),
-
   Pid.
 
 
@@ -31,10 +30,20 @@ double() ->
 
 double(T) ->
   Ref = make_ref(),
-  double ! {self(), Ref, T},
-  receive
-    {Ref, Number} ->
-      Number
+  case is_pid(whereis(double)) of
+    false ->
+      io:format("Process dead, trying again in 100ms"),
+      timer:sleep(100),
+      double(T);
+    true ->
+      double ! {self(), Ref, T},
+      receive
+        {Ref, Number} ->
+          Number
+
+  end
+
+
 
 
   end.
