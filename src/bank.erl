@@ -18,7 +18,22 @@
 start() ->
   Pid = spawn(fun() -> bank(#{a => 1}) end),
   register(bank, Pid),
+  on_error(Pid, fun(Pid, Why) -> io:format("pid: ~p failed with error: ~p~n", [Pid, Why]) end),
   Pid.
+
+on_error(Pid, On_error) ->
+  spawn(fun() -> Reference = monitor(process, Pid),
+    io:format("Reference: ~p", [Reference]),
+    receive
+      {'DOWN', Reference, process, Pid, Why} ->
+        demonitor(Reference),
+        unregister(bank),
+        On_error(Pid, Why),
+        io:format("I (parent) My worker ~p died (~p)~n", [Pid, Why]),
+        start()
+
+    end
+        end).
 
 bank(Accounts) ->
   receive
@@ -53,7 +68,7 @@ bank(Accounts) ->
               bank(maps:put(Account, 0, Accounts))
           end
       end;
-    {Pid, Ref, Amount, Operation, Account1, Account2} ->
+    {Pid, Ref, Amount, _Operation, Account1, Account2} ->
 
 
       case maps:is_key(Account1, Accounts) or maps:is_key(Account2, Accounts) of
@@ -113,7 +128,7 @@ lend(Pid, From, To, Amount) ->
   Ref = make_ref(),
   Pid ! {self(), Ref, Amount, lend, From, To},
   receive
-    {Ref,ok} ->
+    {Ref, ok} ->
       ok;
     {Ref, false, Account} ->
       {no_account, Account};
