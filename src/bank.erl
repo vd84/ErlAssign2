@@ -16,9 +16,9 @@
 
 
 start() ->
-  Pid = spawn(fun() -> bank(#{a => 1}) end),
+  Pid = spawn(fun() -> bank(#{}) end),
   register(bank, Pid),
-  on_error(Pid, fun(Pid, Why) -> io:format("pid: ~p failed with error: ~p~n", [Pid, Why]) end),
+  on_error(Pid, fun(Pid2, Why) -> io:format("pid: ~p failed with error: ~p~n", [Pid2, Why]) end),
   Pid.
 
 on_error(Pid, On_error) ->
@@ -27,7 +27,7 @@ on_error(Pid, On_error) ->
     receive
       {'DOWN', Reference, process, Pid, Why} ->
         demonitor(Reference),
-        unregister(bank),
+        %unregister(bank),
         On_error(Pid, Why),
         io:format("I (parent) My worker ~p died (~p)~n", [Pid, Why]),
         start()
@@ -36,41 +36,38 @@ on_error(Pid, On_error) ->
         end).
 
 bank(Accounts) ->
+  %balance
   receive
     {Pid, Ref, Account1} ->
-      case maps:is_key(Account1, Accounts) of
-        true ->
-          Pid ! {Ref, is_number(maps:get(Account1, Accounts)), maps:get(Account1, Accounts)},
-          bank(Accounts);
-        false ->
-          Pid ! {Ref, not_found},
-          bank(maps:put(Account1, 0, Accounts))
-      end;
-    {Pid, Ref, Amount, Operation, Account} ->
+      Pid ! {Ref, maps:get(Account1, Accounts, not_found)},
+      bank(Accounts);
+%Deposit/withdraw
+    {Pid, Ref, Amount, MathFun, Account, Operation} ->
       case Operation of
         deposit ->
-          case maps:is_key(Account, Accounts) of
-            true ->
-              Pid ! {Ref, true, Amount},
-              bank(maps:put(Account, maps:get(Account, Accounts) + Amount, Accounts));
-            false ->
-              Pid ! {Ref, not_found},
-              bank(maps:put(Account, 0, Accounts))
-          end;
-%Withdraw
+          NewAccounts = maps:put(Account, MathFun(maps:get(Account, Accounts, 0), Amount), Accounts),
+          Pid ! {Ref, maps:get(Account, NewAccounts)},
+          bank(NewAccounts);
         withdraw ->
           case maps:is_key(Account, Accounts) of
             true ->
-              Pid ! {Ref, true, maps:get(Account, Accounts) - Amount},
-              bank(maps:put(Account, maps:get(Account, Accounts) - Amount, Accounts));
+              case MathFun(maps:get(Account, Accounts, 0), Amount) >= 0 of
+                true ->
+                  NewAccounts = maps:update(Account, MathFun(maps:get(Account, Accounts, 0), Amount), Accounts),
+                  Pid ! {Ref, maps:get(Account, NewAccounts)},
+                  bank(NewAccounts);
+                false ->
+                  Pid ! {Ref, insufficient_funds},
+                  bank(Accounts)
+              end;
             false ->
-              Pid ! {Ref, not_found},
-              bank(maps:put(Account, 0, Accounts))
+              Pid ! {Ref, no_account},
+              bank(Accounts)
           end
       end;
-    {Pid, Ref, Amount, _Operation, Account1, Account2} ->
 
-
+%Lend
+    {Pid, Ref, Amount, Account1, Account2, lend} ->
       case maps:is_key(Account1, Accounts) or maps:is_key(Account2, Accounts) of
         true ->
           case maps:is_key(Account1, Accounts) of
@@ -82,58 +79,63 @@ bank(Accounts) ->
                 false ->
                   Pid ! {Ref, false, Account2},
                   bank(maps:put(Account2, 0, Accounts))
-
               end;
             false ->
               Pid ! {Ref, false, Account1},
               bank(maps:put(Account1, 0, Accounts))
-
           end;
         false ->
           Pid ! {Ref, both}
       end
   end.
 
+
+
 balance(Pid, Account) ->
   Ref = make_ref(),
   Pid ! {self(), Ref, Account},
   receive
-    {Ref, not_found} ->
-      no_account;
-    {Ref, true, Number} ->
-      Number
+    {Ref, Balance} ->
+      Balance
   end.
 
 deposit(Pid, Account, Amount) ->
   Ref = make_ref(),
-  Pid ! {self(), Ref, Amount, deposit, Account},
+  Pid ! {self(), Ref, Amount, fun(X, Y) -> X + Y end, Account, deposit},
   receive
-    {Ref, not_found} ->
-      no_account;
-    {Ref, true, Number} ->
+    {Ref, Number} ->
       {ok, Number}
   end.
 
 withdraw(Pid, Account, Amount) ->
   Ref = make_ref(),
-  Pid ! {self(), Ref, Amount, withdraw, Account},
+  Pid ! {self(), Ref, Amount, fun(X, Y) -> X - Y end, Account, withdraw},
   receive
-    {Ref, not_found} ->
+    {Ref, no_account} ->
       no_account;
-    {Ref, true, Number} ->
+    {Ref, insufficient_funds} ->
+      insufficient_funds;
+    {Ref, Number} ->
       {ok, Number}
+
   end.
 
 lend(Pid, From, To, Amount) ->
   Ref = make_ref(),
-  Pid ! {self(), Ref, Amount, lend, From, To},
-  receive
-    {Ref, ok} ->
-      ok;
-    {Ref, false, Account} ->
-      {no_account, Account};
-    {Ref, both} ->
-      both
-
+  Pid ! {self(), Ref, Amount, From, To, lend},
+  case is_pid(Pid) of
+    true ->
+      receive
+        {Ref, ok} ->
+          ok;
+        {Ref, false, Account} ->
+          {no_account, Account};
+        {Ref, both} ->
+          both;
+        false ->
+          no_bank
+      end
   end.
+
+
 
