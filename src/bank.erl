@@ -17,7 +17,6 @@
 
 start() ->
   Pid = spawn(fun() -> bank(#{}) end),
-  on_error(Pid, fun(Pid2, Why) -> io:format("pid: ~p failed with error: ~p~n", [Pid2, Why]) end),
   Pid.
 
 on_error(Pid, On_error) ->
@@ -90,7 +89,9 @@ bank(Accounts) ->
               bank(maps:put(Account1, 0, Accounts))
           end;
         false ->
-          Pid ! {Ref, both}
+          Pid ! {Ref, both},
+          bank(Accounts)
+
       end
   end.
 
@@ -137,10 +138,10 @@ lend(Pid, From, To, Amount) ->
           insufficient_funds;
         {Ref, ok} ->
           ok;
+        {Ref, both} ->
+          {no_account, both};
         {Ref, false, Account} ->
           {no_account, Account};
-        {Ref, both} ->
-          both;
         false ->
           no_bank
       end
