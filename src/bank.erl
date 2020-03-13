@@ -17,16 +17,14 @@
 
 start() ->
   Pid = spawn(fun() -> bank(#{}) end),
+  on_error(Pid),
   Pid.
 
-on_error(Pid, On_error) ->
+on_error(Pid) ->
   spawn(fun() -> Reference = monitor(process, Pid),
-    io:format("Reference: ~p", [Reference]),
     receive
-      {'DOWN', Reference, process, Pid, Why} ->
+      {'DOWN', Reference, process, Pid, _Why} ->
         demonitor(Reference),
-        %unregister(bank),
-        On_error(Pid, Why),
         no_bank
     end
         end).
