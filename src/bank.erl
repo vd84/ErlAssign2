@@ -17,7 +17,6 @@
 
 start() ->
   Pid = spawn(fun() -> bank(#{}) end),
-  register(bank, Pid),
   on_error(Pid, fun(Pid2, Why) -> io:format("pid: ~p failed with error: ~p~n", [Pid2, Why]) end),
   Pid.
 
@@ -29,9 +28,7 @@ on_error(Pid, On_error) ->
         demonitor(Reference),
         %unregister(bank),
         On_error(Pid, Why),
-        io:format("I (parent) My worker ~p died (~p)~n", [Pid, Why]),
-        start()
-
+        no_bank
     end
         end).
 
@@ -39,7 +36,7 @@ bank(Accounts) ->
   %balance
   receive
     {Pid, Ref, Account1} ->
-      Pid ! {Ref, maps:get(Account1, Accounts, not_found)},
+      Pid ! {Ref, maps:get(Account1, Accounts, no_account)},
       bank(Accounts);
 %Deposit/withdraw
     {Pid, Ref, Amount, MathFun, Account, Operation} ->
@@ -67,18 +64,26 @@ bank(Accounts) ->
       end;
 
 %Lend
-    {Pid, Ref, Amount, Account1, Account2, lend} ->
+    {Pid, Ref, Amount, Account1, Account2} ->
       case maps:is_key(Account1, Accounts) or maps:is_key(Account2, Accounts) of
         true ->
           case maps:is_key(Account1, Accounts) of
             true ->
               case maps:is_key(Account2, Accounts) of
                 true ->
-                  Pid ! {Ref, ok},
-                  bank(maps:put(Account2, maps:get(Account2, Accounts) + Amount, maps:put(Account1, maps:get(Account1, Accounts) - Amount, Accounts)));
+                  AmountLeft = maps:get(Account1, Accounts) - Amount,
+                  case AmountLeft >= 0 of
+                    true ->
+                      Pid ! {Ref, ok},
+                      bank(maps:put(Account2, maps:get(Account2, Accounts) + Amount, maps:put(Account1, maps:get(Account1, Accounts) - Amount, Accounts)));
+                    false ->
+                      Pid ! {Ref, insufficient_funds},
+                      bank(Accounts)
+                  end;
+
                 false ->
                   Pid ! {Ref, false, Account2},
-                  bank(maps:put(Account2, 0, Accounts))
+                  bank(Accounts)
               end;
             false ->
               Pid ! {Ref, false, Account1},
@@ -95,8 +100,10 @@ balance(Pid, Account) ->
   Ref = make_ref(),
   Pid ! {self(), Ref, Account},
   receive
+    {Ref, no_account} ->
+      no_account;
     {Ref, Balance} ->
-      Balance
+      {ok, Balance}
   end.
 
 deposit(Pid, Account, Amount) ->
@@ -122,10 +129,12 @@ withdraw(Pid, Account, Amount) ->
 
 lend(Pid, From, To, Amount) ->
   Ref = make_ref(),
-  Pid ! {self(), Ref, Amount, From, To, lend},
+  Pid ! {self(), Ref, Amount, From, To},
   case is_pid(Pid) of
     true ->
       receive
+        {Ref, insufficient_funds} ->
+          insufficient_funds;
         {Ref, ok} ->
           ok;
         {Ref, false, Account} ->

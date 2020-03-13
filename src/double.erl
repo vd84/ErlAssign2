@@ -32,7 +32,6 @@ double(T) ->
   Ref = make_ref(),
   case is_pid(whereis(double)) of
     false ->
-      io:format("Process dead, trying again in 100ms"),
       timer:sleep(100),
       double(T);
     true ->
